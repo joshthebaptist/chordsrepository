@@ -2,58 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Song, Sunday, ChordPlacement } from "@/lib/types";
+import { Song, Sunday } from "@/lib/types";
 import { formatDateDisplay } from "@/lib/dates";
-import { transposeChord } from "@/lib/transpose";
+import { SongChordView } from "@/app/songs/SongChordView";
 
 interface PrintSong extends Song {
-  transposedKey: string;
-  transposedChords: ChordPlacement[];
-}
-
-function SongForPrint({ song }: { song: PrintSong }) {
-  const lines = song.lyrics.split("\n");
-
-  return (
-    <div className="song-block mb-8">
-      <div className="flex items-baseline gap-3 mb-4">
-        <h2 className="font-display text-2xl font-bold text-stone-800">
-          {song.title}
-        </h2>
-        <span className="text-sm text-stone-500 font-medium">
-          Key: {song.transposedKey}
-        </span>
-      </div>
-
-      <div className="space-y-0">
-        {lines.map((line, lineIdx) => {
-          const lineChords = song.transposedChords.filter(
-            (c) => c.lineIndex === lineIdx
-          );
-          return (
-            <div key={lineIdx}>
-              {/* Chord row */}
-              <div className="chord-row relative min-h-[1.5rem]">
-                {lineChords.map((chord) => (
-                  <span
-                    key={chord.id}
-                    className="chord-pill"
-                    style={{ left: `${chord.position * 8}px` }}
-                  >
-                    {chord.chord}
-                  </span>
-                ))}
-              </div>
-              {/* Lyric line */}
-              <div className="lyric-line font-mono text-sm text-stone-700 whitespace-pre-wrap leading-relaxed">
-                {line || "\u00A0"}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  displayKey: string;
 }
 
 export default function PrintPage() {
@@ -78,18 +32,9 @@ export default function PrintPage() {
         .map((ss) => {
           const song = allSongs.find((s) => s.id === ss.songId);
           if (!song) return null;
-
-          // Calculate transposition difference
-          const keyDiff = getKeyDiff(song.currentKey, ss.keyOverride);
-          const transposedChords = song.chords.map((c) => ({
-            ...c,
-            chord: keyDiff === 0 ? c.chord : transposeChord(c.chord, keyDiff, ss.keyOverride),
-          }));
-
           return {
             ...song,
-            transposedKey: ss.keyOverride,
-            transposedChords,
+            displayKey: ss.keyOverride,
           };
         })
         .filter(Boolean) as PrintSong[];
@@ -99,14 +44,6 @@ export default function PrintPage() {
     }
     load();
   }, [date]);
-
-  function getKeyDiff(from: string, to: string): number {
-    const keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    const fromIdx = keys.indexOf(from);
-    const toIdx = keys.indexOf(to);
-    if (fromIdx === -1 || toIdx === -1) return 0;
-    return (toIdx - fromIdx + 12) % 12;
-  }
 
   if (loading) {
     return (
@@ -169,8 +106,25 @@ export default function PrintPage() {
       </div>
 
       {/* Songs */}
-      {songs.map((song) => (
-        <SongForPrint key={song.id} song={song} />
+      {songs.map((song, i) => (
+        <div key={song.id} className="song-block mb-10 pb-8 border-b border-stone-200 last:border-0">
+          <div className="flex items-baseline gap-3 mb-4">
+            <span className="text-sm font-bold text-stone-400">{i + 1}.</span>
+            <h2 className="font-display text-2xl font-bold text-stone-800">
+              {song.title}
+            </h2>
+            <span className="text-sm text-stone-500 font-medium">
+              Key: {song.displayKey}
+            </span>
+          </div>
+
+          <SongChordView
+            lyrics={song.lyrics}
+            chords={song.chords}
+            originalKey={song.currentKey}
+            displayKey={song.displayKey}
+          />
+        </div>
       ))}
 
       {songs.length === 0 && (

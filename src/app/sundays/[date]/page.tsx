@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { Song, Sunday, SundaySong } from "@/lib/types";
+import { Song, Sunday } from "@/lib/types";
 import { formatDateDisplay } from "@/lib/dates";
 import { transposeKey } from "@/lib/transpose";
+import { SongChordView } from "@/app/songs/SongChordView";
 
 export default function SundayDetailPage() {
   const router = useRouter();
@@ -16,10 +17,9 @@ export default function SundayDetailPage() {
   const [allSongs, setAllSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Song[]>([]);
   const [showSearch, setShowSearch] = useState(false);
 
-  const { day, month, year, full } = formatDateDisplay(date);
+  const { full } = formatDateDisplay(date);
 
   const loadData = useCallback(async () => {
     const [sundayRes, songsRes] = await Promise.all([
@@ -40,12 +40,10 @@ export default function SundayDetailPage() {
   const handleSearch = async (q: string) => {
     setSearchQuery(q);
     if (!q.trim()) {
-      setSearchResults([]);
       return;
     }
     const res = await fetch(`/api/songs?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    setSearchResults(data);
+    await res.json();
   };
 
   const addSongToSunday = async (songId: string) => {
@@ -67,7 +65,6 @@ export default function SundayDetailPage() {
       setSunday(updated);
       setShowSearch(false);
       setSearchQuery("");
-      setSearchResults([]);
     }
   };
 
@@ -146,7 +143,8 @@ export default function SundayDetailPage() {
     : availableSongs;
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-8 max-w-4xl">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <button
@@ -170,65 +168,49 @@ export default function SundayDetailPage() {
           <Link
             href={`/print/${date}`}
             target="_blank"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors"
+            className="print-hide inline-flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 text-stone-600 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors shadow-sm"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <polyline points="6,9 6,2 18,2 18,9"/>
               <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
               <rect x="6" y="14" width="12" height="8"/>
             </svg>
-            Print
+            Print Chord Sheet
           </Link>
         )}
       </div>
 
-      {/* Songs in service */}
+      {/* Full songs */}
       {sundaySongs.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-6">
           {sundaySongs.map((ss, i) => {
             const song = allSongs.find((s) => s.id === ss.songId);
             if (!song) return null;
             return (
               <div
                 key={ss.songId}
-                className="bg-white rounded-xl p-4 border border-stone-100"
+                className="bg-white rounded-2xl border border-stone-100 overflow-hidden"
               >
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-full bg-gold-lighter text-amber-700 text-sm font-bold flex items-center justify-center shrink-0 mt-0.5">
+                {/* Song header with controls */}
+                <div className="print-hide flex items-center gap-3 px-5 py-3 bg-stone-50 border-b border-stone-100">
+                  <div className="w-7 h-7 rounded-full bg-gold-lighter text-amber-700 text-sm font-bold flex items-center justify-center shrink-0">
                     {i + 1}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-display text-lg font-semibold text-stone-800 truncate">
-                        {song.title}
-                      </h3>
-                      <span className="text-xs px-2 py-0.5 bg-gold-lighter rounded-full text-amber-700 font-medium shrink-0">
-                        Key: {ss.keyOverride}
-                      </span>
-                    </div>
-                    <p className="text-xs text-stone-400 mt-0.5">
-                      Library key: {song.currentKey}
-                      {song.editedBy && ` · Edited by ${song.editedBy}`}
-                    </p>
+                  <h3 className="font-display text-lg font-semibold text-stone-800 flex-1 truncate">
+                    {song.title}
+                  </h3>
 
-                    {/* Quick chord preview */}
-                    <div className="mt-3 text-xs text-stone-500 bg-stone-50 rounded-lg p-3 max-h-24 overflow-hidden">
-                      {song.lyrics.split("\n").slice(0, 6).map((line, li) => (
-                        <div key={li} className="font-mono leading-relaxed">
-                          {line || "\u00A0"}
-                        </div>
-                      ))}
-                      {song.lyrics.split("\n").length > 6 && (
-                        <div className="text-stone-400 italic">...more lines</div>
-                      )}
-                    </div>
-                  </div>
+                  {/* Key badge */}
+                  <span className="text-xs px-2.5 py-1 bg-gold-lighter rounded-full text-amber-700 font-medium shrink-0">
+                    {ss.keyOverride}
+                  </span>
 
-                  <div className="flex items-center gap-1 shrink-0">
+                  {/* Per-song controls */}
+                  <div className="flex items-center gap-0.5 shrink-0">
                     <button
                       onClick={() => moveSong(ss.songId, -1)}
                       disabled={i === 0}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-50 disabled:opacity-30 transition-colors"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-200/50 disabled:opacity-30 transition-colors"
                       title="Move up"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 15l-6-6-6 6"/></svg>
@@ -236,25 +218,27 @@ export default function SundayDetailPage() {
                     <button
                       onClick={() => moveSong(ss.songId, 1)}
                       disabled={i === sundaySongs.length - 1}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-50 disabled:opacity-30 transition-colors"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-200/50 disabled:opacity-30 transition-colors"
                       title="Move down"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
                     </button>
+                    <div className="w-px h-4 bg-stone-200 mx-1" />
                     <button
                       onClick={() => transposeSundaySong(ss.songId, -1)}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-50 transition-colors text-xs"
-                      title="Transpose down"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-200/50 transition-colors text-sm font-bold"
+                      title="Transpose down 1 semitone"
                     >
                       ♭
                     </button>
                     <button
                       onClick={() => transposeSundaySong(ss.songId, 1)}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-50 transition-colors text-xs"
-                      title="Transpose up"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-200/50 transition-colors text-sm"
+                      title="Transpose up 1 semitone"
                     >
                       ♮
                     </button>
+                    <div className="w-px h-4 bg-stone-200 mx-1" />
                     <Link
                       href={`/songs/${song.id}`}
                       className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-gold hover:bg-gold-lighter transition-colors"
@@ -263,13 +247,27 @@ export default function SundayDetailPage() {
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     </Link>
                     <button
-                      onClick={() => removeSongFromSunday(ss.songId)}
+                      onClick={() => {
+                        if (confirm(`Remove "${song.title}" from this service?`)) {
+                          removeSongFromSunday(ss.songId);
+                        }
+                      }}
                       className="w-7 h-7 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                       title="Remove from service"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                     </button>
                   </div>
+                </div>
+
+                {/* Full song content — lyrics + chords */}
+                <div className="px-5 py-4">
+                  <SongChordView
+                    lyrics={song.lyrics}
+                    chords={song.chords}
+                    originalKey={song.currentKey}
+                    displayKey={ss.keyOverride}
+                  />
                 </div>
               </div>
             );
@@ -278,7 +276,7 @@ export default function SundayDetailPage() {
       )}
 
       {/* Add song section */}
-      <div className="bg-white/60 rounded-2xl border border-dashed border-stone-200 p-6">
+      <div className="print-hide bg-white/60 rounded-2xl border border-dashed border-stone-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-lg font-semibold text-stone-700">
             Add Song to Service
