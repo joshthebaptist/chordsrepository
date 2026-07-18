@@ -220,6 +220,59 @@ export async function searchSongs(query: string): Promise<Song[]> {
   });
 }
 
+// --- Optimized queries (no N+1) ---
+
+export async function getAllSongTitles(): Promise<{ id: string; title: string }[]> {
+  await ensureDb();
+  return timedQuery("getAllSongTitles", async () => {
+    const db = getClient();
+    const result = await db.execute("SELECT id, title FROM songs ORDER BY title");
+    return result.rows.map((r) => ({ id: r.id as string, title: r.title as string }));
+  });
+}
+
+export async function ensureUpcomingSundays(dates: string[]): Promise<void> {
+  await ensureDb();
+  await timedQuery("ensureUpcomingSundays", async () => {
+    const db = getClient();
+    if (dates.length === 0) return;
+    await db.batch(
+      dates.map((d) => ({
+        sql: "INSERT OR IGNORE INTO sundays (date) VALUES (?)",
+        args: [d],
+      }))
+    );
+  });
+}
+
+export async function getAllSundaysOptimized(): Promise<Sunday[]> {
+  await ensureDb();
+  return timedQuery("getAllSundaysOptimized", async () => {
+    const db = getClient();
+
+    const [sundaysResult, songsResult] = await db.batch([
+      { sql: "SELECT date FROM sundays ORDER BY date", args: [] },
+      { sql: "SELECT sunday_date, song_id, key_override, sort_order FROM sunday_songs ORDER BY sort_order", args: [] },
+    ]);
+
+    const songsBySunday = new Map<string, SundaySong[]>();
+    for (const row of songsResult.rows) {
+      const date = row.sunday_date as string;
+      if (!songsBySunday.has(date)) songsBySunday.set(date, []);
+      songsBySunday.get(date)!.push({
+        songId: row.song_id as string,
+        keyOverride: row.key_override as string,
+        order: row.sort_order as number,
+      });
+    }
+
+    return sundaysResult.rows.map((r) => ({
+      date: r.date as string,
+      songs: songsBySunday.get(r.date as string) || [],
+    }));
+  });
+}
+
 // --- Sundays ---
 
 export async function getAllSundays(): Promise<Sunday[]> {

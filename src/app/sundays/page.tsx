@@ -1,21 +1,17 @@
 import Link from "next/link";
-import { getAllSundays, getAllSongs, createOrUpdateSunday } from "@/lib/store";
+import { getAllSundaysOptimized, getAllSongTitles, ensureUpcomingSundays } from "@/lib/store";
 import { formatDateDisplay, generateUpcomingSundays } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
 export default async function SundaysPage() {
-  let sundays = await getAllSundays();
-  const songs = await getAllSongs();
-
-  // Ensure upcoming Sundays exist
   const upcomingDates = generateUpcomingSundays(52);
-  for (const date of upcomingDates) {
-    if (!sundays.find((s) => s.date === date)) {
-      await createOrUpdateSunday({ date, songs: [] });
-    }
-  }
-  sundays = await getAllSundays();
+  await ensureUpcomingSundays(upcomingDates);
+  const [sundays, songTitles] = await Promise.all([
+    getAllSundaysOptimized(),
+    getAllSongTitles(),
+  ]);
+  const songMap = new Map(songTitles.map((s) => [s.id, s.title]));
 
   return (
     <div className="space-y-6">
@@ -64,7 +60,7 @@ export default async function SundaysPage() {
                             {i + 1}
                           </span>
                           <span className="truncate">
-                            {songs.find((s) => s.id === ss.songId)?.title || "Unknown song"}
+                            {songMap.get(ss.songId) || "Unknown song"}
                           </span>
                           <span className="text-xs text-stone-400">({ss.keyOverride})</span>
                         </div>
