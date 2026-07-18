@@ -43,6 +43,7 @@ async function loadSectionsForSong(db: ReturnType<typeof getClient>, songId: str
         chord: c.chord as string,
         position: c.position as number,
         lineIndex: c.line_index as number,
+        ...(c.source_index != null ? { sourceIndex: c.source_index as number } : {}),
       })),
     });
   }
@@ -62,8 +63,8 @@ async function saveSectionsForSong(db: ReturnType<typeof getClient>, songId: str
 
   const chordBatch = sections.flatMap((s) =>
     s.chords.map((c) => ({
-      sql: "INSERT INTO section_chords (id, section_id, chord, position, line_index) VALUES (?, ?, ?, ?, ?)",
-      args: [c.id, s.id, c.chord, c.position, c.lineIndex],
+      sql: "INSERT INTO section_chords (id, section_id, chord, position, line_index, source_index) VALUES (?, ?, ?, ?, ?, ?)",
+      args: [c.id, s.id, c.chord, c.position, c.lineIndex, c.sourceIndex ?? null],
     }))
   );
   if (chordBatch.length > 0) {

@@ -3,6 +3,7 @@ export interface ChordPlacement {
   chord: string;
   position: number;
   lineIndex: number;
+  sourceIndex?: number;
 }
 
 export type SectionType = "verse" | "pre-chorus" | "chorus" | "bridge";

@@ -40,23 +40,50 @@ function syncChordsFromVerse1(sections: SongSection[], overrides: Set<string>): 
   return sections.map((s) => {
     if (s.type !== "verse" || s.id === verse1.id) return s;
 
+    const migratedChords = s.chords.map((c) => {
+      if (c.sourceIndex !== undefined) return c;
+      const v1LineChords = verse1.chords
+        .filter((vc) => vc.lineIndex === c.lineIndex)
+        .sort((a, b) => a.position - b.position);
+      const sameLine = s.chords
+        .filter((sc) => sc.lineIndex === c.lineIndex)
+        .sort((a, b) => a.position - b.position);
+      const idx = sameLine.indexOf(c);
+      return { ...c, sourceIndex: idx < v1LineChords.length ? idx : undefined };
+    });
+
     const newChords: ChordPlacement[] = [];
     const verse1Lines = verse1.lyrics.split("\n");
 
     for (let lineIdx = 0; lineIdx < verse1Lines.length; lineIdx++) {
-      const overrideKey = `${s.id}:${lineIdx}`;
-      if (overrides.has(overrideKey)) continue;
+      const v1LineChords = verse1.chords
+        .filter((c) => c.lineIndex === lineIdx)
+        .sort((a, b) => a.position - b.position);
 
-      const v1Chords = verse1.chords.filter((c) => c.lineIndex === lineIdx);
-      const existingChords = s.chords.filter((c) => c.lineIndex === lineIdx);
+      for (let i = 0; i < v1LineChords.length; i++) {
+        const v1c = v1LineChords[i];
+        const overrideKey = `${s.id}:${lineIdx}:${i}`;
+        if (overrides.has(overrideKey)) continue;
 
-      for (const v1c of v1Chords) {
-        const match = existingChords.find((e) => e.position === v1c.position && e.chord === v1c.chord);
-        if (match) {
-          newChords.push(match);
+        const existing = migratedChords.find((c) => c.lineIndex === lineIdx && c.sourceIndex === i);
+
+        if (existing) {
+          newChords.push({ ...existing, chord: v1c.chord });
         } else {
-          newChords.push({ id: makeChordId(), chord: v1c.chord, position: v1c.position, lineIndex: v1c.lineIndex });
+          newChords.push({
+            id: makeChordId(),
+            chord: v1c.chord,
+            position: v1c.position,
+            lineIndex: lineIdx,
+            sourceIndex: i,
+          });
         }
+      }
+    }
+
+    for (const c of migratedChords) {
+      if (!newChords.some((n) => n.id === c.id)) {
+        newChords.push(c);
       }
     }
 
@@ -144,11 +171,12 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
   }
 
   function removeChord(sectionId: string, chordId: string) {
-    const sec = sections.find((s) => s.id === sectionId);
-    const chord = sec?.chords.find((c) => c.id === chordId);
-
-    if (!isVerse1(sectionId) && chord) {
-      overridesRef.current.add(`${sectionId}:${chord.lineIndex}`);
+    if (!isVerse1(sectionId)) {
+      const sec = sections.find((s) => s.id === sectionId);
+      const chord = sec?.chords.find((c) => c.id === chordId);
+      if (chord && chord.sourceIndex !== undefined) {
+        overridesRef.current.add(`${sectionId}:${chord.lineIndex}:${chord.sourceIndex}`);
+      }
     }
 
     const updated = sections.map((s) => {
@@ -164,10 +192,6 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
     if (!sec) return;
     const chord = sec.chords.find((c) => c.id === chordId);
     if (!chord) return;
-
-    if (!isVerse1(sectionId)) {
-      overridesRef.current.add(`${sectionId}:${chord.lineIndex}`);
-    }
 
     const newPos = Math.max(0, chord.position + delta);
     const safePos = findOpenPosition(sectionId, newPos, chordId, chord.lineIndex);
@@ -233,16 +257,13 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
   const placeChord = (text: string) => {
     if (!picker) return;
 
-    if (!isVerse1(picker.sectionId) && !picker.editingId) {
-      overridesRef.current.add(`${picker.sectionId}:${picker.lineIndex}`);
-    }
-
     const updated = sections.map((s) => {
       if (s.id !== picker.sectionId) return s;
 
       if (picker.editingId) {
-        if (!isVerse1(s.id)) {
-          overridesRef.current.add(`${s.id}:${picker.lineIndex}`);
+        const chord = s.chords.find((c) => c.id === picker.editingId);
+        if (chord && !isVerse1(s.id) && chord.sourceIndex !== undefined) {
+          overridesRef.current.add(`${s.id}:${chord.lineIndex}:${chord.sourceIndex}`);
         }
         return { ...s, chords: s.chords.map((c) => c.id === picker.editingId ? { ...c, chord: text } : c) };
       }
@@ -270,12 +291,19 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
     };
 
     if (copyChordsFrom) {
-      newSection.chords = copyChordsFrom.chords.map((c) => ({
-        id: makeChordId(),
-        chord: c.chord,
-        position: c.position,
-        lineIndex: c.lineIndex,
-      }));
+      newSection.chords = copyChordsFrom.chords.map((c) => {
+        const lineChords = copyChordsFrom.chords
+          .filter((vc) => vc.lineIndex === c.lineIndex)
+          .sort((a, b) => a.position - b.position);
+        const idx = lineChords.indexOf(c);
+        return {
+          id: makeChordId(),
+          chord: c.chord,
+          position: c.position,
+          lineIndex: c.lineIndex,
+          sourceIndex: idx,
+        };
+      });
     }
 
     updateSections([...sections, newSection]);
@@ -336,10 +364,6 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
       const x = e.clientX - rect.left;
       const rawPos = Math.max(0, Math.round(x / 8));
       const safePos = findOpenPosition(sectionId, rawPos, id, chord.lineIndex);
-
-      if (!isVerse1(sectionId)) {
-        overridesRef.current.add(`${sectionId}:${chord.lineIndex}`);
-      }
 
       updateChord(sectionId, id, { position: safePos });
     }
@@ -409,7 +433,6 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
         {!isCollapsed && (
           <div className="p-2 sm:p-3">
             {lines.map((line, lineIdx) => {
-              const isOverridden = !isVerse1(sec.id) && overridesRef.current.has(`${sec.id}:${lineIdx}`);
               return (
                 <div key={lineIdx} className="group/line px-3">
                   <div
@@ -425,37 +448,38 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
                   >
                     {sec.chords
                       .filter((c) => c.lineIndex === lineIdx)
-                      .map((chord) => (
-                        <div
-                          key={chord.id}
-                          onPointerDown={(e) => handlePointerDown(e, chord.id, sec.id)}
-                          onPointerMove={handlePointerMove}
-                          onPointerUp={handlePointerUp}
-                          className={`chord-pill ${selectedId === chord.id ? "selected" : ""}`}
-                          style={{ left: `${chord.position * 8}px`, touchAction: "none" }}
-                        >
-                          <span className="chord-text select-none">{chord.chord}</span>
-                          {!readOnly && (
-                            <button
-                              className="chord-delete"
-                              onPointerDown={(e) => e.stopPropagation()}
-                              onClick={(e) => { e.stopPropagation(); removeChord(sec.id, chord.id); setSelectedId(null); }}
-                            >
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                      .map((chord) => {
+                        const isChordOverridden = !isVerse1(sec.id) && chord.sourceIndex !== undefined &&
+                          overridesRef.current.has(`${sec.id}:${lineIdx}:${chord.sourceIndex}`);
+                        return (
+                          <div
+                            key={chord.id}
+                            onPointerDown={(e) => handlePointerDown(e, chord.id, sec.id)}
+                            onPointerMove={handlePointerMove}
+                            onPointerUp={handlePointerUp}
+                            className={`chord-pill ${selectedId === chord.id ? "selected" : ""}`}
+                            style={{ left: `${chord.position * 8}px`, touchAction: "none" }}
+                          >
+                            <span className="chord-text select-none">{chord.chord}</span>
+                            {isChordOverridden && !readOnly && (
+                              <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[7px] text-amber-600 font-sans font-medium pointer-events-none whitespace-nowrap">edited</span>
+                            )}
+                            {!readOnly && (
+                              <button
+                                className="chord-delete"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); removeChord(sec.id, chord.id); setSelectedId(null); }}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
 
                     {sec.chords.filter((c) => c.lineIndex === lineIdx).length === 0 && !readOnly && (
                       <div className="absolute inset-0 flex items-center justify-center text-xs text-stone-300 opacity-0 group-hover/line:opacity-100 transition-opacity pointer-events-none">
                         click to add chord
-                      </div>
-                    )}
-
-                    {isOverridden && !readOnly && (
-                      <div className="absolute right-2 top-0.5 text-xs text-amber-500 opacity-60 pointer-events-none">
-                        overridden
                       </div>
                     )}
                   </div>

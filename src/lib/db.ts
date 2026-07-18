@@ -65,6 +65,7 @@ export async function initDb() {
       chord TEXT NOT NULL,
       position INTEGER DEFAULT 0,
       line_index INTEGER DEFAULT 0,
+      source_index INTEGER,
       FOREIGN KEY (section_id) REFERENCES song_sections(id) ON DELETE CASCADE
     );
   `);
