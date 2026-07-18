@@ -230,24 +230,39 @@ export async function loadSundaysPageData(upcomingDates: string[]): Promise<{
   return timedQuery("loadSundaysPageData", async () => {
     const db = getClient();
 
-    // One single batch: INSERT OR IGNORE all upcoming dates + SELECT sundays + SELECT sunday_songs + SELECT song titles
-    const batch = [
-      ...upcomingDates.map((d) => ({
-        sql: "INSERT OR IGNORE INTO sundays (date) VALUES (?)",
-        args: [d],
-      })),
-      { sql: "SELECT date FROM sundays ORDER BY date", args: [] },
-      { sql: "SELECT sunday_date, song_id, key_override, sort_order FROM sunday_songs", args: [] },
-      { sql: "SELECT id, title FROM songs ORDER BY title", args: [] },
-    ];
+    // First: check how many Sundays already exist — skip INSERT batch if all present
+    const countResult = await db.execute("SELECT COUNT(*) as cnt FROM sundays");
+    const count = countResult.rows[0].cnt as number;
 
-    const results = await db.batch(batch);
+    let sundaysResult, sundaySongsResult, songTitlesResult;
 
-    // Results correspond to the last 3 queries (the INSERTs don't return useful data)
-    const insertCount = upcomingDates.length;
-    const sundaysResult = results[insertCount];
-    const sundaySongsResult = results[insertCount + 1];
-    const songTitlesResult = results[insertCount + 2];
+    if (count < upcomingDates.length) {
+      // First load or new Sundays added — insert missing then read everything in one batch
+      const batch = [
+        ...upcomingDates.map((d) => ({
+          sql: "INSERT OR IGNORE INTO sundays (date) VALUES (?)",
+          args: [d],
+        })),
+        { sql: "SELECT date FROM sundays ORDER BY date", args: [] },
+        { sql: "SELECT sunday_date, song_id, key_override, sort_order FROM sunday_songs", args: [] },
+        { sql: "SELECT id, title FROM songs ORDER BY title", args: [] },
+      ];
+      const results = await db.batch(batch);
+      const insertCount = upcomingDates.length;
+      sundaysResult = results[insertCount];
+      sundaySongsResult = results[insertCount + 1];
+      songTitlesResult = results[insertCount + 2];
+    } else {
+      // All Sundays exist — just read (3 parallel queries in one batch)
+      const results = await db.batch([
+        { sql: "SELECT date FROM sundays ORDER BY date", args: [] },
+        { sql: "SELECT sunday_date, song_id, key_override, sort_order FROM sunday_songs", args: [] },
+        { sql: "SELECT id, title FROM songs ORDER BY title", args: [] },
+      ]);
+      sundaysResult = results[0];
+      sundaySongsResult = results[1];
+      songTitlesResult = results[2];
+    }
 
     const songsBySunday = new Map<string, SundaySong[]>();
     for (const row of sundaySongsResult.rows) {
