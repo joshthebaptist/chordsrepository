@@ -98,7 +98,7 @@ export default function PrintPage() {
       )}
 
       {/* Header for print */}
-      <div className="print-header text-center mb-8 pb-4 border-b-2 border-stone-200">
+      <div className="print-header text-center border-b border-stone-200">
         <h1 className="font-display text-3xl font-bold text-stone-800">
           Worship Service
         </h1>

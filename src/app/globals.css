@@ -129,7 +129,14 @@ body {
 
   .print-view h1 {
     font-size: 24pt;
-    margin-bottom: 8pt;
+    margin-bottom: 4pt;
+  }
+
+  .print-header {
+    page-break-after: avoid;
+    margin-bottom: 10pt !important;
+    padding-bottom: 6pt !important;
+    border-bottom: 1px solid #ccc !important;
   }
 
   .lyric-line {
@@ -148,12 +155,6 @@ body {
     margin-bottom: 24pt;
     border-bottom: 1px solid #ddd;
     padding-bottom: 12pt;
-  }
-
-  .print-header {
-    page-break-after: avoid;
-    margin-bottom: 12pt !important;
-    padding-bottom: 6pt !important;
   }
 }
 
