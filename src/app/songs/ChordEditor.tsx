@@ -22,7 +22,7 @@ const KEY_OPTIONS = [
   "Db", "Eb", "Gb", "Ab", "Bb",
 ];
 
-const CHORD_PILL_WIDTH_CHARS = 6;
+const CHORD_PILL_WIDTH_CHARS = 7;
 
 export function ChordEditor({
   initialLyrics,
@@ -81,33 +81,33 @@ export function ChordEditor({
     const lineChords = chords.filter((c) => c.lineIndex === lineIndex);
     if (lineChords.length === 0) return preferredPos;
 
-    // Check if preferred position overlaps any existing chord
-    const overlaps = lineChords.some((c) => {
-      const chordStart = c.position;
-      const chordEnd = c.position + CHORD_PILL_WIDTH_CHARS;
-      const newStart = preferredPos;
-      const newEnd = preferredPos + CHORD_PILL_WIDTH_CHARS;
-      return newStart < chordEnd && newEnd > chordStart;
-    });
+    // Build occupied ranges
+    const occupied = lineChords
+      .map((c) => ({ start: c.position, end: c.position + CHORD_PILL_WIDTH_CHARS }))
+      .sort((a, b) => a.start - b.start);
 
-    if (!overlaps) return preferredPos;
+    // Check if preferred position is free
+    const prefEnd = preferredPos + CHORD_PILL_WIDTH_CHARS;
+    const prefOk = !occupied.some((r) => preferredPos < r.end && prefEnd > r.start);
+    if (prefOk) return preferredPos;
 
-    // Find next open slot to the right
-    const sorted = [...lineChords].sort((a, b) => a.position - b.position);
-    for (const c of sorted) {
-      const slotEnd = c.position + CHORD_PILL_WIDTH_CHARS;
-      const testPos = slotEnd + 1;
-      const stillOverlaps = lineChords.some((other) => {
-        if (other.id === c.id) return false;
-        const otherEnd = other.position + CHORD_PILL_WIDTH_CHARS;
-        return testPos < otherEnd && (testPos + CHORD_PILL_WIDTH_CHARS) > other.position;
-      });
-      if (!stillOverlaps) return testPos;
+    // Scan for first gap: try before first chord, then between chords, then after last
+    // Gap before first chord
+    if (occupied[0].start >= CHORD_PILL_WIDTH_CHARS) {
+      return 0;
     }
 
-    // Fallback: place after the last chord
-    const lastChord = sorted[sorted.length - 1];
-    return lastChord.position + CHORD_PILL_WIDTH_CHARS + 2;
+    // Gaps between chords
+    for (let i = 0; i < occupied.length - 1; i++) {
+      const gapStart = occupied[i].end + 1;
+      const gapEnd = occupied[i + 1].start;
+      if (gapEnd - gapStart >= CHORD_PILL_WIDTH_CHARS) {
+        return gapStart;
+      }
+    }
+
+    // After last chord
+    return occupied[occupied.length - 1].end + 2;
   };
 
   // Open picker for adding a new chord
