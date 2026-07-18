@@ -1,16 +1,12 @@
 import Link from "next/link";
-import { getAllSundaysOptimized, getAllSongTitles, ensureUpcomingSundays } from "@/lib/store";
+import { loadSundaysPageData } from "@/lib/store";
 import { formatDateDisplay, generateUpcomingSundays } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
 export default async function SundaysPage() {
   const upcomingDates = generateUpcomingSundays(52);
-  await ensureUpcomingSundays(upcomingDates);
-  const [sundays, songTitles] = await Promise.all([
-    getAllSundaysOptimized(),
-    getAllSongTitles(),
-  ]);
+  const { sundays, songTitles } = await loadSundaysPageData(upcomingDates);
   const songMap = new Map(songTitles.map((s) => [s.id, s.title]));
 
   return (

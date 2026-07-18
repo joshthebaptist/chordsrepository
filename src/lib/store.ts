@@ -220,43 +220,37 @@ export async function searchSongs(query: string): Promise<Song[]> {
   });
 }
 
-// --- Optimized queries (no N+1) ---
+// --- Single-call optimized query for Sundays page ---
 
-export async function getAllSongTitles(): Promise<{ id: string; title: string }[]> {
+export async function loadSundaysPageData(upcomingDates: string[]): Promise<{
+  sundays: Sunday[];
+  songTitles: { id: string; title: string }[];
+}> {
   await ensureDb();
-  return timedQuery("getAllSongTitles", async () => {
+  return timedQuery("loadSundaysPageData", async () => {
     const db = getClient();
-    const result = await db.execute("SELECT id, title FROM songs ORDER BY title");
-    return result.rows.map((r) => ({ id: r.id as string, title: r.title as string }));
-  });
-}
 
-export async function ensureUpcomingSundays(dates: string[]): Promise<void> {
-  await ensureDb();
-  await timedQuery("ensureUpcomingSundays", async () => {
-    const db = getClient();
-    if (dates.length === 0) return;
-    await db.batch(
-      dates.map((d) => ({
+    // One single batch: INSERT OR IGNORE all upcoming dates + SELECT sundays + SELECT sunday_songs + SELECT song titles
+    const batch = [
+      ...upcomingDates.map((d) => ({
         sql: "INSERT OR IGNORE INTO sundays (date) VALUES (?)",
         args: [d],
-      }))
-    );
-  });
-}
-
-export async function getAllSundaysOptimized(): Promise<Sunday[]> {
-  await ensureDb();
-  return timedQuery("getAllSundaysOptimized", async () => {
-    const db = getClient();
-
-    const [sundaysResult, songsResult] = await db.batch([
+      })),
       { sql: "SELECT date FROM sundays ORDER BY date", args: [] },
-      { sql: "SELECT sunday_date, song_id, key_override, sort_order FROM sunday_songs ORDER BY sort_order", args: [] },
-    ]);
+      { sql: "SELECT sunday_date, song_id, key_override, sort_order FROM sunday_songs", args: [] },
+      { sql: "SELECT id, title FROM songs ORDER BY title", args: [] },
+    ];
+
+    const results = await db.batch(batch);
+
+    // Results correspond to the last 3 queries (the INSERTs don't return useful data)
+    const insertCount = upcomingDates.length;
+    const sundaysResult = results[insertCount];
+    const sundaySongsResult = results[insertCount + 1];
+    const songTitlesResult = results[insertCount + 2];
 
     const songsBySunday = new Map<string, SundaySong[]>();
-    for (const row of songsResult.rows) {
+    for (const row of sundaySongsResult.rows) {
       const date = row.sunday_date as string;
       if (!songsBySunday.has(date)) songsBySunday.set(date, []);
       songsBySunday.get(date)!.push({
@@ -266,10 +260,17 @@ export async function getAllSundaysOptimized(): Promise<Sunday[]> {
       });
     }
 
-    return sundaysResult.rows.map((r) => ({
+    const sundays: Sunday[] = sundaysResult.rows.map((r) => ({
       date: r.date as string,
       songs: songsBySunday.get(r.date as string) || [],
     }));
+
+    const songTitles = songTitlesResult.rows.map((r) => ({
+      id: r.id as string,
+      title: r.title as string,
+    }));
+
+    return { sundays, songTitles };
   });
 }
 
