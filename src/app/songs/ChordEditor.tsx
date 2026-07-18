@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { ChordPlacement } from "@/lib/types";
-import { transposeChord, transposeKey } from "@/lib/transpose";
+import { transposeChord, transposeKey, semitoneDiff } from "@/lib/transpose";
 
 interface ChordEditorProps {
   initialLyrics: string;
@@ -129,8 +129,15 @@ export function ChordEditor({
           <select
             value={currentKey}
             onChange={(e) => {
-              setCurrentKey(e.target.value);
-              emitChange(lyrics, chords, e.target.value);
+              const newKey = e.target.value;
+              const diff = semitoneDiff(currentKey, newKey);
+              const newChords = diff === 0 ? chords : chords.map((c) => ({
+                ...c,
+                chord: transposeChord(c.chord, diff, newKey),
+              }));
+              setCurrentKey(newKey);
+              setChords(newChords);
+              emitChange(lyrics, newChords, newKey);
             }}
             className="px-3 py-1.5 bg-white border border-stone-200 rounded-lg text-sm font-medium focus:border-gold focus:ring-1 focus:ring-gold/20 outline-none"
           >

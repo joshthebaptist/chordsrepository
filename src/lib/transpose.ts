@@ -13,6 +13,17 @@ const NOTE_TO_SEMITONE: Record<string, number> = {};
 CHROMATIC_SHARP.forEach((n, i) => (NOTE_TO_SEMITONE[n] = i));
 CHROMATIC_FLAT.forEach((n, i) => (NOTE_TO_SEMITONE[n] = i));
 
+/**
+ * Calculate the semitone difference between two notes.
+ * Positive = up, negative = down.
+ */
+export function semitoneDiff(from: string, to: string): number {
+  const fromIdx = NOTE_TO_SEMITONE[from];
+  const toIdx = NOTE_TO_SEMITONE[to];
+  if (fromIdx === undefined || toIdx === undefined) return 0;
+  return (toIdx - fromIdx + 12) % 12;
+}
+
 // Keys that use flat spelling in the target key context
 const FLAT_KEYS = new Set(["Db", "Eb", "Gb", "Ab", "Bb"]);
 
