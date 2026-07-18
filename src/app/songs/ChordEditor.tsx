@@ -22,7 +22,9 @@ const KEY_OPTIONS = [
   "Db", "Eb", "Gb", "Ab", "Bb",
 ];
 
-const CHORD_PILL_WIDTH_CHARS = 7;
+const PILL_WIDTH = 7; // approx character-width of a chord pill
+const NUDGE_SMALL = 2; // arrow key nudge in chars
+const NUDGE_LARGE = 6; // shift+arrow nudge in chars
 
 export function ChordEditor({
   initialLyrics,
@@ -34,39 +36,117 @@ export function ChordEditor({
   const [lyrics, setLyrics] = useState(initialLyrics);
   const [chords, setChords] = useState<ChordPlacement[]>(initialChords);
   const [currentKey, setCurrentKey] = useState(initialKey);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Picker state
+  // Picker
   const [picker, setPicker] = useState<{
     lineIndex: number;
-    x: number;
+    charPos: number;
     editingId: string | null;
   } | null>(null);
-  const [customChord, setCustomChord] = useState("");
+  const [customText, setCustomText] = useState("");
   const [showCustom, setShowCustom] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const emitChange = useCallback(
-    (newLyrics: string, newChords: ChordPlacement[], newKey: string) => {
-      onChange(newLyrics, newChords, newKey);
-    },
+    (l: string, c: ChordPlacement[], k: string) => onChange(l, c, k),
     [onChange]
   );
 
-  // Close picker when clicking outside
+  // --- Collision detection ---
+
+  function getOccupied(lineIndex: number, excludeId?: string) {
+    return chords
+      .filter((c) => c.lineIndex === lineIndex && c.id !== excludeId)
+      .map((c) => ({ id: c.id, start: c.position, end: c.position + PILL_WIDTH }))
+      .sort((a, b) => a.start - b.start);
+  }
+
+  function isOccupied(pos: number, occupied: { start: number; end: number }[]) {
+    const newEnd = pos + PILL_WIDTH;
+    return occupied.some((r) => pos < r.end && newEnd > r.start);
+  }
+
+  function findOpenPosition(lineIndex: number, preferred: number, excludeId?: string): number {
+    const occ = getOccupied(lineIndex, excludeId);
+    if (occ.length === 0) return Math.max(0, preferred);
+
+    // Try preferred position first
+    if (!isOccupied(preferred, occ)) return preferred;
+
+    // Search right for a gap
+    for (let try_ = preferred; try_ < 200; try_++) {
+      if (!isOccupied(try_, occ)) return try_;
+    }
+
+    // Search left
+    for (let try_ = preferred - 1; try_ >= 0; try_--) {
+      if (!isOccupied(try_, occ)) return try_;
+    }
+
+    // Fallback: after last chord
+    const last = occ[occ.length - 1];
+    return last.end + 1;
+  }
+
+  function nudgeChord(id: string, delta: number) {
+    const chord = chords.find((c) => c.id === id);
+    if (!chord) return;
+    const newPos = Math.max(0, chord.position + delta);
+    const safePos = findOpenPosition(chord.lineIndex, newPos, id);
+    if (safePos === chord.position) return;
+    const updated = chords.map((c) => c.id === id ? { ...c, position: safePos } : c);
+    setChords(updated);
+    emitChange(lyrics, updated, currentKey);
+  }
+
+  // --- Close picker on outside click ---
+
   useEffect(() => {
     if (!picker) return;
-    function handleClickOutside(e: MouseEvent) {
+    const handler = (e: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setPicker(null);
         setShowCustom(false);
-        setCustomChord("");
+        setCustomText("");
       }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, [picker]);
+
+  // --- Keyboard ---
+
+  useEffect(() => {
+    if (readOnly || !selectedId) return;
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept when typing in an input/textarea
+      if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        nudgeChord(selectedId, e.shiftKey ? -NUDGE_LARGE : -NUDGE_SMALL);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        nudgeChord(selectedId, e.shiftKey ? NUDGE_LARGE : NUDGE_SMALL);
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        removeChord(selectedId);
+        setSelectedId(null);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openPickerForChord(selectedId);
+      } else if (e.key === "Escape") {
+        setSelectedId(null);
+        setPicker(null);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [selectedId, readOnly, chords, lyrics, currentKey]);
+
+  // --- Lyrics ---
 
   const handleLyricsChange = (value: string) => {
     setLyrics(value);
@@ -76,104 +156,69 @@ export function ChordEditor({
     emitChange(value, filtered, currentKey);
   };
 
-  // Find the nearest non-overlapping position for a new chord on a line
-  const findOpenPosition = (lineIndex: number, preferredPos: number): number => {
-    const lineChords = chords.filter((c) => c.lineIndex === lineIndex);
-    if (lineChords.length === 0) return preferredPos;
+  // --- Picker ---
 
-    // Build occupied ranges
-    const occupied = lineChords
-      .map((c) => ({ start: c.position, end: c.position + CHORD_PILL_WIDTH_CHARS }))
-      .sort((a, b) => a.start - b.start);
-
-    // Check if preferred position is free
-    const prefEnd = preferredPos + CHORD_PILL_WIDTH_CHARS;
-    const prefOk = !occupied.some((r) => preferredPos < r.end && prefEnd > r.start);
-    if (prefOk) return preferredPos;
-
-    // Scan for first gap: try before first chord, then between chords, then after last
-    // Gap before first chord
-    if (occupied[0].start >= CHORD_PILL_WIDTH_CHARS) {
-      return 0;
-    }
-
-    // Gaps between chords
-    for (let i = 0; i < occupied.length - 1; i++) {
-      const gapStart = occupied[i].end + 1;
-      const gapEnd = occupied[i + 1].start;
-      if (gapEnd - gapStart >= CHORD_PILL_WIDTH_CHARS) {
-        return gapStart;
-      }
-    }
-
-    // After last chord
-    return occupied[occupied.length - 1].end + 2;
-  };
-
-  // Open picker for adding a new chord
-  const openPickerForLine = (lineIndex: number, x: number) => {
+  const openPickerForLine = (lineIndex: number, charPos: number) => {
     if (readOnly) return;
-    setPicker({ lineIndex, x, editingId: null });
+    setSelectedId(null);
+    setPicker({ lineIndex, charPos, editingId: null });
     setShowCustom(false);
-    setCustomChord("");
+    setCustomText("");
   };
 
-  // Open picker to edit an existing chord
   const openPickerForChord = (chordId: string) => {
     if (readOnly) return;
     const chord = chords.find((c) => c.id === chordId);
     if (!chord) return;
-    setPicker({ lineIndex: chord.lineIndex, x: chord.position * 8, editingId: chordId });
+    setSelectedId(chordId);
+    setPicker({ lineIndex: chord.lineIndex, charPos: chord.position, editingId: chordId });
     setShowCustom(false);
-    setCustomChord("");
+    setCustomText("");
   };
 
-  // Place or update a chord from the picker
-  const placeChord = (chordText: string) => {
+  const placeChord = (text: string) => {
     if (!picker) return;
 
     if (picker.editingId) {
-      // Updating existing chord
-      const newChords = chords.map((c) =>
-        c.id === picker.editingId ? { ...c, chord: chordText } : c
+      const updated = chords.map((c) =>
+        c.id === picker.editingId ? { ...c, chord: text } : c
       );
-      setChords(newChords);
-      emitChange(lyrics, newChords, currentKey);
+      setChords(updated);
+      emitChange(lyrics, updated, currentKey);
     } else {
-      // Adding new chord — find open position
-      const charPos = Math.max(0, Math.round(picker.x / 8));
-      const position = findOpenPosition(picker.lineIndex, charPos);
+      const pos = findOpenPosition(picker.lineIndex, picker.charPos);
       const newChord: ChordPlacement = {
         id: crypto.randomUUID(),
-        chord: chordText,
-        position,
+        chord: text,
+        position: pos,
         lineIndex: picker.lineIndex,
       };
-      const newChords = [...chords, newChord];
-      setChords(newChords);
-      emitChange(lyrics, newChords, currentKey);
+      const updated = [...chords, newChord];
+      setChords(updated);
+      emitChange(lyrics, updated, currentKey);
     }
 
     setPicker(null);
     setShowCustom(false);
-    setCustomChord("");
+    setCustomText("");
   };
 
   const removeChord = (id: string) => {
-    const newChords = chords.filter((c) => c.id !== id);
-    setChords(newChords);
-    emitChange(lyrics, newChords, currentKey);
-    if (picker?.editingId === id) {
-      setPicker(null);
-    }
+    const updated = chords.filter((c) => c.id !== id);
+    setChords(updated);
+    emitChange(lyrics, updated, currentKey);
+    if (picker?.editingId === id) setPicker(null);
   };
 
-  // Drag-and-drop
+  // --- Drag ---
+
   const dragRef = useRef<{ id: string; startX: number; moved: boolean } | null>(null);
 
   const handlePointerDown = (e: React.PointerEvent, chordId: string) => {
     if (readOnly) return;
+    e.stopPropagation();
     dragRef.current = { id: chordId, startX: e.clientX, moved: false };
+    setSelectedId(chordId);
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   };
 
@@ -182,23 +227,22 @@ export function ChordEditor({
     const dx = Math.abs(e.clientX - dragRef.current.startX);
     if (dx > 4) {
       dragRef.current.moved = true;
-      setDraggingId(dragRef.current.id);
 
-      // Find which line we're over
       const chord = chords.find((c) => c.id === dragRef.current!.id);
       if (!chord) return;
 
-      // Calculate new position based on mouse
       const lineEl = lineRefs.current[chord.lineIndex];
       if (!lineEl) return;
       const rect = lineEl.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      const charPos = Math.max(0, Math.round(x / 8));
+      const rawPos = Math.max(0, Math.round(x / 8));
 
-      const newChords = chords.map((c) =>
-        c.id === dragRef.current!.id ? { ...c, position: charPos } : c
+      // Collision check during drag
+      const safePos = findOpenPosition(chord.lineIndex, rawPos, dragRef.current!.id);
+      const updated = chords.map((c) =>
+        c.id === dragRef.current!.id ? { ...c, position: safePos } : c
       );
-      setChords(newChords);
+      setChords(updated);
     }
   };
 
@@ -207,36 +251,34 @@ export function ChordEditor({
     const wasDrag = dragRef.current.moved;
     const chordId = dragRef.current.id;
     dragRef.current = null;
-    setDraggingId(null);
 
     if (!wasDrag) {
-      // It was a click, not a drag — open picker
       openPickerForChord(chordId);
     } else {
-      // Finished dragging — emit final state
       emitChange(lyrics, chords, currentKey);
     }
   };
 
   const handleChordRowClick = (e: React.MouseEvent, lineIndex: number) => {
     if (readOnly) return;
-    // Only open picker if clicking on empty space (not on a chord pill)
-    const target = e.target as HTMLElement;
-    if (target.closest(".chord-pill")) return;
+    if ((e.target as HTMLElement).closest(".chord-pill")) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const x = e.clientX - rect.left;
-    openPickerForLine(lineIndex, x);
+    const charPos = Math.max(0, Math.round(x / 8));
+    openPickerForLine(lineIndex, charPos);
   };
+
+  // --- Transpose ---
 
   const handleTranspose = (semitones: number) => {
     const newKey = transposeKey(currentKey, semitones);
-    const newChords = chords.map((c) => ({
+    const updated = chords.map((c) => ({
       ...c,
       chord: transposeChord(c.chord, semitones, newKey),
     }));
     setCurrentKey(newKey);
-    setChords(newChords);
-    emitChange(lyrics, newChords, newKey);
+    setChords(updated);
+    emitChange(lyrics, updated, newKey);
   };
 
   const diatonicChords = FAMILY_CHART[currentKey] || FAMILY_CHART["C"];
@@ -253,13 +295,13 @@ export function ChordEditor({
             onChange={(e) => {
               const newKey = e.target.value;
               const diff = semitoneDiff(currentKey, newKey);
-              const newChords = diff === 0 ? chords : chords.map((c) => ({
+              const updated = diff === 0 ? chords : chords.map((c) => ({
                 ...c,
                 chord: transposeChord(c.chord, diff, newKey),
               }));
               setCurrentKey(newKey);
-              setChords(newChords);
-              emitChange(lyrics, newChords, newKey);
+              setChords(updated);
+              emitChange(lyrics, updated, newKey);
             }}
             className="px-3 py-1.5 bg-white border border-stone-200 rounded-lg text-sm font-medium focus:border-gold focus:ring-1 focus:ring-gold/20 outline-none"
           >
@@ -270,55 +312,27 @@ export function ChordEditor({
         </div>
 
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => handleTranspose(-1)}
-            className="px-3 py-1.5 text-sm font-medium bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors"
-          >
-            &#9837; Down
-          </button>
-          <button
-            onClick={() => handleTranspose(1)}
-            className="px-3 py-1.5 text-sm font-medium bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors"
-          >
-            &#9838; Up
-          </button>
-          <button
-            onClick={() => handleTranspose(-5)}
-            className="px-2 py-1.5 text-xs font-medium text-stone-500 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors"
-          >
-            -5
-          </button>
-          <button
-            onClick={() => handleTranspose(5)}
-            className="px-2 py-1.5 text-xs font-medium text-stone-500 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors"
-          >
-            +5
-          </button>
+          <button onClick={() => handleTranspose(-1)} className="px-3 py-1.5 text-sm font-medium bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors" title="Transpose down 1 semitone">&#9837; Down</button>
+          <button onClick={() => handleTranspose(1)} className="px-3 py-1.5 text-sm font-medium bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors" title="Transpose up 1 semitone">&#9838; Up</button>
+          <button onClick={() => handleTranspose(-5)} className="px-2 py-1.5 text-xs font-medium text-stone-500 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors" title="Transpose down 5 semitones">-5</button>
+          <button onClick={() => handleTranspose(5)} className="px-2 py-1.5 text-xs font-medium text-stone-500 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors" title="Transpose up 5 semitones">+5</button>
         </div>
 
         <div className="text-xs text-stone-400">
-          {chords.length} chord{chords.length !== 1 ? "s" : ""} placed
+          {chords.length} chord{chords.length !== 1 ? "s" : ""}
+          {selectedId && <span className="ml-2 text-gold">selected — arrow keys to nudge</span>}
         </div>
       </div>
 
       {/* Chord picker popup */}
       {picker && (
-        <div
-          ref={pickerRef}
-          className="chord-picker bg-white rounded-xl border border-stone-200 shadow-lg p-3 z-50"
-          style={{ maxWidth: "360px" }}
-        >
+        <div ref={pickerRef} className="chord-picker bg-white rounded-xl border border-stone-200 shadow-lg p-3 z-50" style={{ maxWidth: "360px" }}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-stone-500">
               {picker.editingId ? "Change chord" : `Add chord — Key of ${currentKey}`}
             </span>
             {picker.editingId && (
-              <button
-                onClick={() => {
-                  removeChord(picker.editingId!);
-                }}
-                className="text-xs text-red-400 hover:text-red-600 transition-colors"
-              >
+              <button onClick={() => { removeChord(picker.editingId!); setSelectedId(null); }} className="text-xs text-red-400 hover:text-red-600 transition-colors">
                 Remove
               </button>
             )}
@@ -326,7 +340,6 @@ export function ChordEditor({
 
           {!showCustom ? (
             <>
-              {/* Diatonic chords */}
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {diatonicChords.map((ch) => (
                   <button
@@ -338,8 +351,6 @@ export function ChordEditor({
                   </button>
                 ))}
               </div>
-
-              {/* Other / custom chord button */}
               <button
                 onClick={() => setShowCustom(true)}
                 className="w-full px-3 py-1.5 text-sm text-stone-500 bg-stone-50 hover:bg-stone-100 rounded-lg transition-colors border border-dashed border-stone-300"
@@ -348,39 +359,28 @@ export function ChordEditor({
               </button>
             </>
           ) : (
-            /* Custom chord input */
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                value={customChord}
-                onChange={(e) => setCustomChord(e.target.value)}
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && customChord.trim()) {
-                    placeChord(customChord.trim());
-                  }
-                  if (e.key === "Escape") {
-                    setPicker(null);
-                    setShowCustom(false);
-                  }
+                  if (e.key === "Enter" && customText.trim()) placeChord(customText.trim());
+                  if (e.key === "Escape") { setPicker(null); setShowCustom(false); }
                 }}
                 placeholder="e.g. Cadd9, D/F#, Gsus4..."
                 className="flex-1 px-3 py-1.5 text-sm font-mono bg-white border border-stone-200 rounded-lg focus:border-gold focus:ring-1 focus:ring-gold/20 outline-none"
                 autoFocus
               />
               <button
-                onClick={() => {
-                  if (customChord.trim()) placeChord(customChord.trim());
-                }}
-                disabled={!customChord.trim()}
+                onClick={() => { if (customText.trim()) placeChord(customText.trim()); }}
+                disabled={!customText.trim()}
                 className="px-3 py-1.5 text-sm font-medium bg-gold text-white rounded-lg hover:bg-amber-500 disabled:opacity-40 transition-colors"
               >
                 Add
               </button>
               <button
-                onClick={() => {
-                  setShowCustom(false);
-                  setCustomChord("");
-                }}
+                onClick={() => { setShowCustom(false); setCustomText(""); }}
                 className="px-2 py-1.5 text-sm text-stone-400 hover:text-stone-600 transition-colors"
               >
                 ←
@@ -390,7 +390,7 @@ export function ChordEditor({
         </div>
       )}
 
-      {/* Lyrics + Chord editor area */}
+      {/* Lyrics + Chord editor */}
       <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
         <div className="p-1 sm:p-2">
           {lines.map((line, lineIdx) => (
@@ -401,7 +401,6 @@ export function ChordEditor({
                 className="relative min-h-[1.75rem] px-3 py-0.5 border-b border-dashed border-stone-100 cursor-crosshair"
                 onClick={(e) => handleChordRowClick(e, lineIdx)}
               >
-                {/* Placed chords */}
                 {chords
                   .filter((c) => c.lineIndex === lineIdx)
                   .map((chord) => (
@@ -410,24 +409,15 @@ export function ChordEditor({
                       onPointerDown={(e) => handlePointerDown(e, chord.id)}
                       onPointerMove={handlePointerMove}
                       onPointerUp={handlePointerUp}
-                      className={`chord-pill ${draggingId === chord.id ? "dragging" : ""} ${picker?.editingId === chord.id ? "ring-2 ring-gold" : ""}`}
-                      style={{
-                        left: `${chord.position * 8}px`,
-                        touchAction: "none",
-                      }}
+                      className={`chord-pill ${selectedId === chord.id ? "selected" : ""}`}
+                      style={{ left: `${chord.position * 8}px`, touchAction: "none" }}
                     >
-                      <span className="chord-text select-none">
-                        {chord.chord}
-                      </span>
-
+                      <span className="chord-text select-none">{chord.chord}</span>
                       {!readOnly && (
                         <button
                           className="chord-delete"
                           onPointerDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeChord(chord.id);
-                          }}
+                          onClick={(e) => { e.stopPropagation(); removeChord(chord.id); setSelectedId(null); }}
                         >
                           ×
                         </button>
@@ -435,7 +425,6 @@ export function ChordEditor({
                     </div>
                   ))}
 
-                {/* Hint when empty */}
                 {chords.filter((c) => c.lineIndex === lineIdx).length === 0 && !readOnly && (
                   <div className="absolute inset-0 flex items-center justify-center text-xs text-stone-300 opacity-0 group-hover/line:opacity-100 transition-opacity pointer-events-none">
                     click to add chord
@@ -448,9 +437,7 @@ export function ChordEditor({
                 {line.trim() === "" ? (
                   <div className="h-5" />
                 ) : (
-                  <div className="lyric-line font-mono text-sm text-stone-700 whitespace-pre-wrap">
-                    {line}
-                  </div>
+                  <div className="lyric-line font-mono text-sm text-stone-700 whitespace-pre-wrap">{line}</div>
                 )}
               </div>
             </div>
