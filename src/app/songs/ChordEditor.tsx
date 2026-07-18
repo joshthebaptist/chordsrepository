@@ -204,12 +204,22 @@ export function ChordEditor({
                   .map((chord) => (
                     <div
                       key={chord.id}
-                      draggable={!readOnly}
-                      onDragStart={(e) => handleDragStart(e, chord.id)}
-                      onDragEnd={handleDragEnd}
                       className={`chord-pill ${draggingId === chord.id ? "dragging" : ""}`}
                       style={{ left: `${chord.position * 8}px` }}
                     >
+                      {/* Drag handle */}
+                      {!readOnly && (
+                        <span
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, chord.id)}
+                          onDragEnd={handleDragEnd}
+                          className="cursor-grab active:cursor-grabbing pr-0.5 select-none opacity-40 hover:opacity-70"
+                          title="Drag to reposition"
+                        >
+                          ⋮
+                        </span>
+                      )}
+
                       {editingChordId === chord.id ? (
                         <input
                           type="text"
@@ -224,12 +234,16 @@ export function ChordEditor({
                         />
                       ) : (
                         <span
-                          className="chord-text cursor-pointer"
-                          onClick={() => !readOnly && setEditingChordId(chord.id)}
+                          className="chord-text cursor-text"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!readOnly) setEditingChordId(chord.id);
+                          }}
                         >
                           {chord.chord}
                         </span>
                       )}
+
                       {!readOnly && (
                         <button
                           className="chord-delete"

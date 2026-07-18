@@ -31,7 +31,7 @@ body {
 .chord-pill {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 1px;
   min-width: 2.5rem;
   height: 1.5rem;
   padding: 0 0.5rem;
