@@ -1,0 +1,178 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-cream: #FDF8F0;
+  --color-cream-dark: #F5EDE0;
+  --color-gold: #D4A843;
+  --color-gold-light: #F0DCA0;
+  --color-gold-lighter: #FAF0D4;
+  --color-sage: #8BA888;
+  --color-sage-light: #D4E4D2;
+  --color-sky: #7BA7C2;
+  --color-sky-light: #D2E4EE;
+
+  --font-display: var(--font-lora);
+  --font-sans: var(--font-nunito);
+  --font-mono: var(--font-mono);
+}
+
+:root {
+  --background: #FDF8F0;
+  --foreground: #3D3228;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-nunito), system-ui, sans-serif;
+}
+
+/* Chord pill styles */
+.chord-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  background: linear-gradient(135deg, #F0DCA0, #D4A843);
+  color: #5C4A1E;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  box-shadow: 0 1px 3px rgba(212, 168, 67, 0.3), 0 1px 2px rgba(0,0,0,0.06);
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow 0.15s, transform 0.15s;
+  position: absolute;
+  z-index: 10;
+}
+
+.chord-pill:hover {
+  box-shadow: 0 3px 8px rgba(212, 168, 67, 0.4), 0 2px 4px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+
+.chord-pill.dragging {
+  cursor: grabbing;
+  box-shadow: 0 6px 16px rgba(212, 168, 67, 0.5), 0 3px 6px rgba(0,0,0,0.12);
+  transform: translateY(-2px) scale(1.05);
+  z-index: 50;
+}
+
+.chord-pill .chord-text {
+  pointer-events: none;
+}
+
+.chord-pill .chord-delete {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #EF4444;
+  color: white;
+  font-size: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.chord-pill:hover .chord-delete {
+  opacity: 1;
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white !important;
+    font-size: 12pt;
+  }
+
+  nav, .no-print, .chord-delete, button, .print-hide {
+    display: none !important;
+  }
+
+  .chord-pill {
+    position: relative !important;
+    display: inline-flex !important;
+    box-shadow: none !important;
+    border: 1px solid #999 !important;
+    margin: 0 2px !important;
+    transform: none !important;
+    cursor: default !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .print-view {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .print-view h1 {
+    font-size: 24pt;
+    margin-bottom: 8pt;
+  }
+
+  .lyric-line {
+    font-size: 12pt;
+    line-height: 1.8;
+    white-space: pre-wrap;
+  }
+
+  .chord-row {
+    min-height: 1.2em !important;
+    margin-bottom: 0 !important;
+  }
+
+  .song-block {
+    page-break-inside: avoid;
+    margin-bottom: 24pt;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 12pt;
+  }
+}
+
+/* Ornamental divider */
+.ornament-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px 0;
+  opacity: 0.4;
+}
+
+.ornament-divider::before,
+.ornament-divider::after {
+  content: "";
+  flex: 1;
+  max-width: 120px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, #D4A843, transparent);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D4C4A0;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #D4A843;
+}
