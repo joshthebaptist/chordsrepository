@@ -1,15 +1,25 @@
 export interface ChordPlacement {
   id: string;
   chord: string;
-  position: number; // character position above the lyric line
-  lineIndex: number; // which lyric line this chord sits above
+  position: number;
+  lineIndex: number;
+}
+
+export type SectionType = "verse" | "pre-chorus" | "chorus" | "bridge";
+
+export interface SongSection {
+  id: string;
+  type: SectionType;
+  label: string;
+  lyrics: string;
+  order: number;
+  chords: ChordPlacement[];
 }
 
 export interface Song {
   id: string;
   title: string;
-  lyrics: string; // raw lyrics text, one line per line
-  chords: ChordPlacement[];
+  sections: SongSection[];
   currentKey: string;
   editedBy: string;
   createdAt: string;
@@ -18,11 +28,11 @@ export interface Song {
 
 export interface SundaySong {
   songId: string;
-  keyOverride: string; // the key used for this Sunday (may differ from library key)
+  keyOverride: string;
   order: number;
 }
 
 export interface Sunday {
-  date: string; // YYYY-MM-DD format
+  date: string;
   songs: SundaySong[];
 }

@@ -103,7 +103,7 @@ export function SongList({ initialSongs }: { initialSongs: Song[] }) {
                       <span>by {song.editedBy}</span>
                     )}
                     <span>
-                      {song.lyrics.split("\n").filter((l) => l.trim()).length} lines
+                      {song.sections.reduce((acc, sec) => acc + sec.lyrics.split("\n").filter((l) => l.trim()).length, 0)} lines
                     </span>
                   </div>
                 </Link>

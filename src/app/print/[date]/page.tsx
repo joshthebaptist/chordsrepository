@@ -119,8 +119,7 @@ export default function PrintPage() {
           </div>
 
           <SongChordView
-            lyrics={song.lyrics}
-            chords={song.chords}
+            sections={song.sections}
             originalKey={song.currentKey}
             displayKey={song.displayKey}
           />

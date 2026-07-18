@@ -48,5 +48,24 @@ export async function initDb() {
       FOREIGN KEY (sunday_date) REFERENCES sundays(date) ON DELETE CASCADE,
       FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS song_sections (
+      id TEXT PRIMARY KEY,
+      song_id TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'verse',
+      label TEXT NOT NULL DEFAULT 'Verse 1',
+      lyrics TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS section_chords (
+      id TEXT PRIMARY KEY,
+      section_id TEXT NOT NULL,
+      chord TEXT NOT NULL,
+      position INTEGER DEFAULT 0,
+      line_index INTEGER DEFAULT 0,
+      FOREIGN KEY (section_id) REFERENCES song_sections(id) ON DELETE CASCADE
+    );
   `);
 }

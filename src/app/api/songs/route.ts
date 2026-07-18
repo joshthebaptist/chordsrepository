@@ -15,8 +15,7 @@ export async function POST(request: NextRequest) {
   const song: Song = {
     id: crypto.randomUUID(),
     title: body.title || "Untitled",
-    lyrics: body.lyrics || "",
-    chords: body.chords || [],
+    sections: body.sections || [],
     currentKey: body.currentKey || "C",
     editedBy: body.editedBy || "",
     createdAt: now,

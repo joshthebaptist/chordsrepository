@@ -138,7 +138,7 @@ export default function SundayDetailPage() {
     ? availableSongs.filter(
         (s) =>
           s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          s.lyrics.toLowerCase().includes(searchQuery.toLowerCase())
+          s.sections.some((sec) => sec.lyrics.toLowerCase().includes(searchQuery.toLowerCase()))
       )
     : availableSongs;
 
@@ -263,8 +263,7 @@ export default function SundayDetailPage() {
                 {/* Full song content — lyrics + chords */}
                 <div className="px-5 py-4">
                   <SongChordView
-                    lyrics={song.lyrics}
-                    chords={song.chords}
+                    sections={song.sections}
                     originalKey={song.currentKey}
                     displayKey={ss.keyOverride}
                   />
