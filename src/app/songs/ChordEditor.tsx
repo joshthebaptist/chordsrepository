@@ -111,7 +111,7 @@ export function ChordEditor({
     const newKey = transposeKey(currentKey, semitones);
     const newChords = chords.map((c) => ({
       ...c,
-      chord: transposeChord(c.chord, semitones),
+      chord: transposeChord(c.chord, semitones, newKey),
     }));
     setCurrentKey(newKey);
     setChords(newChords);
@@ -212,7 +212,7 @@ export function ChordEditor({
                           onKeyDown={(e) => {
                             if (e.key === "Enter") setEditingChordId(null);
                           }}
-                          className="chord-text bg-transparent border-none outline-none w-12 text-center text-xs font-mono font-semibold"
+                          className="chord-text bg-transparent border-none outline-none w-20 text-center text-xs font-mono font-semibold"
                           autoFocus
                         />
                       ) : (

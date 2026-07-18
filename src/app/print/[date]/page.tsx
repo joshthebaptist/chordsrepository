@@ -83,7 +83,7 @@ export default function PrintPage() {
           const keyDiff = getKeyDiff(song.currentKey, ss.keyOverride);
           const transposedChords = song.chords.map((c) => ({
             ...c,
-            chord: keyDiff === 0 ? c.chord : transposeChord(c.chord, keyDiff),
+            chord: keyDiff === 0 ? c.chord : transposeChord(c.chord, keyDiff, ss.keyOverride),
           }));
 
           return {

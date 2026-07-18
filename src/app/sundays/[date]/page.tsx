@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { Song, Sunday, SundaySong } from "@/lib/types";
 import { formatDateDisplay } from "@/lib/dates";
-import { transposeChord } from "@/lib/transpose";
+import { transposeKey } from "@/lib/transpose";
 
 export default function SundayDetailPage() {
   const router = useRouter();
@@ -87,7 +87,7 @@ export default function SundayDetailPage() {
     if (!sunday) return;
     const ss = sunday.songs.find((s) => s.songId === songId);
     if (!ss) return;
-    const newKey = transposeChord(ss.keyOverride, semitones);
+    const newKey = transposeKey(ss.keyOverride, semitones);
     const res = await fetch("/api/sundays", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
