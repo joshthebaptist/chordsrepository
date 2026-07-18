@@ -102,11 +102,11 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
 
   // --- Collision detection ---
 
-  function getOccupied(sectionId: string, excludeId?: string) {
+  function getOccupied(sectionId: string, excludeId?: string, lineIndex?: number) {
     const sec = sections.find((s) => s.id === sectionId);
     if (!sec) return [];
     return sec.chords
-      .filter((c) => c.id !== excludeId)
+      .filter((c) => c.id !== excludeId && (lineIndex === undefined || c.lineIndex === lineIndex))
       .map((c) => ({ id: c.id, start: c.position, end: c.position + PILL_WIDTH }))
       .sort((a, b) => a.start - b.start);
   }
@@ -116,8 +116,8 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
     return occupied.some((r) => pos < r.end && newEnd > r.start);
   }
 
-  function findOpenPosition(sectionId: string, preferred: number, excludeId?: string): number {
-    const occ = getOccupied(sectionId, excludeId);
+  function findOpenPosition(sectionId: string, preferred: number, excludeId?: string, lineIndex?: number): number {
+    const occ = getOccupied(sectionId, excludeId, lineIndex);
     if (occ.length === 0) return Math.max(0, preferred);
     if (!isOccupied(preferred, occ)) return preferred;
     for (let try_ = preferred; try_ < 200; try_++) {
@@ -170,7 +170,7 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
     }
 
     const newPos = Math.max(0, chord.position + delta);
-    const safePos = findOpenPosition(sectionId, newPos, chordId);
+    const safePos = findOpenPosition(sectionId, newPos, chordId, chord.lineIndex);
     if (safePos === chord.position) return;
     updateChord(sectionId, chordId, { position: safePos });
   }
@@ -247,7 +247,7 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
         return { ...s, chords: s.chords.map((c) => c.id === picker.editingId ? { ...c, chord: text } : c) };
       }
 
-      const pos = findOpenPosition(picker.sectionId, picker.charPos);
+      const pos = findOpenPosition(picker.sectionId, picker.charPos, undefined, picker.lineIndex);
       const newChord: ChordPlacement = { id: makeChordId(), chord: text, position: pos, lineIndex: picker.lineIndex };
       return { ...s, chords: [...s.chords, newChord] };
     });
@@ -335,7 +335,7 @@ export function ChordEditor({ initialSections, initialKey, onChange, readOnly = 
       const rect = lineEl.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const rawPos = Math.max(0, Math.round(x / 8));
-      const safePos = findOpenPosition(sectionId, rawPos, id);
+      const safePos = findOpenPosition(sectionId, rawPos, id, chord.lineIndex);
 
       if (!isVerse1(sectionId)) {
         overridesRef.current.add(`${sectionId}:${chord.lineIndex}`);
