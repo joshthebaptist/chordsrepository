@@ -1,126 +1,360 @@
-import fs from "fs";
-import path from "path";
-import { Song, Sunday } from "./types";
+import { getClient, initDb } from "./db";
+import { Song, Sunday, SundaySong, ChordPlacement } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const SONGS_FILE = path.join(DATA_DIR, "songs.json");
-const SUNDAYS_FILE = path.join(DATA_DIR, "sundays.json");
+let dbReady = false;
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+async function ensureDb() {
+  if (!dbReady) {
+    await initDb();
+    dbReady = true;
   }
 }
 
-function readJSON<T>(filePath: string, fallback: T): T {
-  ensureDataDir();
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2), "utf-8");
-    return fallback;
+// --- Songs ---
+
+export async function getAllSongs(): Promise<Song[]> {
+  await ensureDb();
+  const db = getClient();
+
+  const songsResult = await db.execute("SELECT * FROM songs ORDER BY title");
+  const songs: Song[] = [];
+
+  for (const row of songsResult.rows) {
+    const chordsResult = await db.execute({
+      sql: "SELECT * FROM chord_placements WHERE song_id = ? ORDER BY line_index, position",
+      args: [row.id as string],
+    });
+
+    songs.push({
+      id: row.id as string,
+      title: row.title as string,
+      lyrics: row.lyrics as string,
+      currentKey: row.current_key as string,
+      editedBy: row.edited_by as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      chords: chordsResult.rows.map((c) => ({
+        id: c.id as string,
+        chord: c.chord as string,
+        position: c.position as number,
+        lineIndex: c.line_index as number,
+      })),
+    });
   }
-  const raw = fs.readFileSync(filePath, "utf-8");
-  return JSON.parse(raw) as T;
+
+  return songs;
 }
 
-function writeJSON(filePath: string, data: unknown) {
-  ensureDataDir();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+export async function getSong(id: string): Promise<Song | null> {
+  await ensureDb();
+  const db = getClient();
+
+  const result = await db.execute({
+    sql: "SELECT * FROM songs WHERE id = ?",
+    args: [id],
+  });
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  const chordsResult = await db.execute({
+    sql: "SELECT * FROM chord_placements WHERE song_id = ? ORDER BY line_index, position",
+    args: [id],
+  });
+
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    lyrics: row.lyrics as string,
+    currentKey: row.current_key as string,
+    editedBy: row.edited_by as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    chords: chordsResult.rows.map((c) => ({
+      id: c.id as string,
+      chord: c.chord as string,
+      position: c.position as number,
+      lineIndex: c.line_index as number,
+    })),
+  };
 }
 
-// Songs
-export function getAllSongs(): Song[] {
-  return readJSON<Song[]>(SONGS_FILE, []);
-}
+export async function createSong(song: Song): Promise<Song> {
+  await ensureDb();
+  const db = getClient();
 
-export function getSong(id: string): Song | undefined {
-  const songs = getAllSongs();
-  return songs.find((s) => s.id === id);
-}
+  await db.execute({
+    sql: "INSERT INTO songs (id, title, lyrics, current_key, edited_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [
+      song.id,
+      song.title,
+      song.lyrics,
+      song.currentKey,
+      song.editedBy,
+      song.createdAt,
+      song.updatedAt,
+    ],
+  });
 
-export function createSong(song: Song): Song {
-  const songs = getAllSongs();
-  songs.push(song);
-  writeJSON(SONGS_FILE, songs);
+  if (song.chords.length > 0) {
+    await db.batch(
+      song.chords.map((c) => ({
+        sql: "INSERT INTO chord_placements (id, song_id, chord, position, line_index) VALUES (?, ?, ?, ?, ?)",
+        args: [c.id, song.id, c.chord, c.position, c.lineIndex],
+      }))
+    );
+  }
+
   return song;
 }
 
-export function updateSong(id: string, updates: Partial<Song>): Song | null {
-  const songs = getAllSongs();
-  const idx = songs.findIndex((s) => s.id === id);
-  if (idx === -1) return null;
-  songs[idx] = { ...songs[idx], ...updates, updatedAt: new Date().toISOString() };
-  writeJSON(SONGS_FILE, songs);
-  return songs[idx];
-}
+export async function updateSong(
+  id: string,
+  updates: Partial<Song>
+): Promise<Song | null> {
+  await ensureDb();
+  const db = getClient();
+  const now = new Date().toISOString();
 
-export function deleteSong(id: string): boolean {
-  const songs = getAllSongs();
-  const filtered = songs.filter((s) => s.id !== id);
-  if (filtered.length === songs.length) return false;
-  writeJSON(SONGS_FILE, filtered);
-  return true;
-}
+  const existing = await getSong(id);
+  if (!existing) return null;
 
-export function searchSongs(query: string): Song[] {
-  const songs = getAllSongs();
-  const q = query.toLowerCase();
-  return songs.filter(
-    (s) =>
-      s.title.toLowerCase().includes(q) ||
-      s.lyrics.toLowerCase().includes(q)
-  );
-}
+  const updated = { ...existing, ...updates, updatedAt: now };
 
-// Sundays
-export function getAllSundays(): Sunday[] {
-  return readJSON<Sunday[]>(SUNDAYS_FILE, []);
-}
+  await db.execute({
+    sql: "UPDATE songs SET title = ?, lyrics = ?, current_key = ?, edited_by = ?, updated_at = ? WHERE id = ?",
+    args: [
+      updated.title,
+      updated.lyrics,
+      updated.currentKey,
+      updated.editedBy,
+      now,
+      id,
+    ],
+  });
 
-export function getSunday(date: string): Sunday | undefined {
-  const sundays = getAllSundays();
-  return sundays.find((s) => s.date === date);
-}
+  // Replace all chord placements
+  await db.execute({
+    sql: "DELETE FROM chord_placements WHERE song_id = ?",
+    args: [id],
+  });
 
-export function createOrUpdateSunday(sunday: Sunday): Sunday {
-  const sundays = getAllSundays();
-  const idx = sundays.findIndex((s) => s.date === sunday.date);
-  if (idx >= 0) {
-    sundays[idx] = sunday;
-  } else {
-    sundays.push(sunday);
+  if (updated.chords.length > 0) {
+    await db.batch(
+      updated.chords.map((c) => ({
+        sql: "INSERT INTO chord_placements (id, song_id, chord, position, line_index) VALUES (?, ?, ?, ?, ?)",
+        args: [c.id, id, c.chord, c.position, c.lineIndex],
+      }))
+    );
   }
-  sundays.sort((a, b) => a.date.localeCompare(b.date));
-  writeJSON(SUNDAYS_FILE, sundays);
+
+  return updated;
+}
+
+export async function deleteSong(id: string): Promise<boolean> {
+  await ensureDb();
+  const db = getClient();
+
+  await db.execute({
+    sql: "DELETE FROM chord_placements WHERE song_id = ?",
+    args: [id],
+  });
+
+  const result = await db.execute({
+    sql: "DELETE FROM songs WHERE id = ?",
+    args: [id],
+  });
+
+  return (result.rowsAffected ?? 0) > 0;
+}
+
+export async function searchSongs(query: string): Promise<Song[]> {
+  await ensureDb();
+  const db = getClient();
+  const q = `%${query}%`;
+
+  const songsResult = await db.execute({
+    sql: "SELECT * FROM songs WHERE title LIKE ? OR lyrics LIKE ? ORDER BY title",
+    args: [q, q],
+  });
+
+  const songs: Song[] = [];
+
+  for (const row of songsResult.rows) {
+    const chordsResult = await db.execute({
+      sql: "SELECT * FROM chord_placements WHERE song_id = ? ORDER BY line_index, position",
+      args: [row.id as string],
+    });
+
+    songs.push({
+      id: row.id as string,
+      title: row.title as string,
+      lyrics: row.lyrics as string,
+      currentKey: row.current_key as string,
+      editedBy: row.edited_by as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      chords: chordsResult.rows.map((c) => ({
+        id: c.id as string,
+        chord: c.chord as string,
+        position: c.position as number,
+        lineIndex: c.line_index as number,
+      })),
+    });
+  }
+
+  return songs;
+}
+
+// --- Sundays ---
+
+export async function getAllSundays(): Promise<Sunday[]> {
+  await ensureDb();
+  const db = getClient();
+
+  const sundaysResult = await db.execute("SELECT * FROM sundays ORDER BY date");
+  const sundays: Sunday[] = [];
+
+  for (const row of sundaysResult.rows) {
+    const songsResult = await db.execute({
+      sql: "SELECT * FROM sunday_songs WHERE sunday_date = ? ORDER BY sort_order",
+      args: [row.date as string],
+    });
+
+    sundays.push({
+      date: row.date as string,
+      songs: songsResult.rows.map((s) => ({
+        songId: s.song_id as string,
+        keyOverride: s.key_override as string,
+        order: s.sort_order as number,
+      })),
+    });
+  }
+
+  return sundays;
+}
+
+export async function getSunday(date: string): Promise<Sunday | null> {
+  await ensureDb();
+  const db = getClient();
+
+  const result = await db.execute({
+    sql: "SELECT * FROM sundays WHERE date = ?",
+    args: [date],
+  });
+
+  if (result.rows.length === 0) return null;
+
+  const songsResult = await db.execute({
+    sql: "SELECT * FROM sunday_songs WHERE sunday_date = ? ORDER BY sort_order",
+    args: [date],
+  });
+
+  return {
+    date: result.rows[0].date as string,
+    songs: songsResult.rows.map((s) => ({
+      songId: s.song_id as string,
+      keyOverride: s.key_override as string,
+      order: s.sort_order as number,
+    })),
+  };
+}
+
+export async function createOrUpdateSunday(sunday: Sunday): Promise<Sunday> {
+  await ensureDb();
+  const db = getClient();
+
+  // Ensure the Sunday date exists
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO sundays (date) VALUES (?)",
+    args: [sunday.date],
+  });
+
+  // Replace all songs for this Sunday
+  await db.execute({
+    sql: "DELETE FROM sunday_songs WHERE sunday_date = ?",
+    args: [sunday.date],
+  });
+
+  if (sunday.songs.length > 0) {
+    await db.batch(
+      sunday.songs.map((ss) => ({
+        sql: "INSERT INTO sunday_songs (sunday_date, song_id, key_override, sort_order) VALUES (?, ?, ?, ?)",
+        args: [sunday.date, ss.songId, ss.keyOverride, ss.order],
+      }))
+    );
+  }
+
   return sunday;
 }
 
-export function addSongToSunday(date: string, songId: string, keyOverride: string): Sunday | null {
-  const sundays = getAllSundays();
-  const idx = sundays.findIndex((s) => s.date === date);
-  if (idx === -1) return null;
+export async function addSongToSunday(
+  date: string,
+  songId: string,
+  keyOverride: string
+): Promise<Sunday | null> {
+  await ensureDb();
+  const db = getClient();
 
-  const existing = sundays[idx].songs.find((ss) => ss.songId === songId);
-  if (existing) {
-    existing.keyOverride = keyOverride;
+  // Ensure the Sunday exists
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO sundays (date) VALUES (?)",
+    args: [date],
+  });
+
+  // Check if song already exists for this Sunday
+  const existing = await db.execute({
+    sql: "SELECT id FROM sunday_songs WHERE sunday_date = ? AND song_id = ?",
+    args: [date, songId],
+  });
+
+  if (existing.rows.length > 0) {
+    // Update key
+    await db.execute({
+      sql: "UPDATE sunday_songs SET key_override = ? WHERE sunday_date = ? AND song_id = ?",
+      args: [keyOverride, date, songId],
+    });
   } else {
-    sundays[idx].songs.push({
-      songId,
-      keyOverride,
-      order: sundays[idx].songs.length,
+    // Get max sort order
+    const maxOrder = await db.execute({
+      sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM sunday_songs WHERE sunday_date = ?",
+      args: [date],
+    });
+    const order = maxOrder.rows[0].next_order as number;
+
+    await db.execute({
+      sql: "INSERT INTO sunday_songs (sunday_date, song_id, key_override, sort_order) VALUES (?, ?, ?, ?)",
+      args: [date, songId, keyOverride, order],
     });
   }
-  writeJSON(SUNDAYS_FILE, sundays);
-  return sundays[idx];
+
+  return getSunday(date);
 }
 
-export function removeSongFromSunday(date: string, songId: string): Sunday | null {
-  const sundays = getAllSundays();
-  const idx = sundays.findIndex((s) => s.date === date);
-  if (idx === -1) return null;
+export async function removeSongFromSunday(
+  date: string,
+  songId: string
+): Promise<Sunday | null> {
+  await ensureDb();
+  const db = getClient();
 
-  sundays[idx].songs = sundays[idx].songs
-    .filter((ss) => ss.songId !== songId)
-    .map((ss, i) => ({ ...ss, order: i }));
-  writeJSON(SUNDAYS_FILE, sundays);
-  return sundays[idx];
+  await db.execute({
+    sql: "DELETE FROM sunday_songs WHERE sunday_date = ? AND song_id = ?",
+    args: [date, songId],
+  });
+
+  // Re-order remaining songs
+  const remaining = await db.execute({
+    sql: "SELECT id FROM sunday_songs WHERE sunday_date = ? ORDER BY sort_order",
+    args: [date],
+  });
+
+  await db.batch(
+    remaining.rows.map((row, i) => ({
+      sql: "UPDATE sunday_songs SET sort_order = ? WHERE id = ?",
+      args: [i, row.id],
+    }))
+  );
+
+  return getSunday(date);
 }

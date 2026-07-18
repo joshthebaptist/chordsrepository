@@ -3,24 +3,16 @@ import { generateUpcomingSundays } from "@/lib/dates";
 import { NextRequest } from "next/server";
 
 export async function GET() {
-  let sundays = getAllSundays();
+  let sundays = await getAllSundays();
 
   // Auto-generate upcoming Sundays if they don't exist
   const upcomingDates = generateUpcomingSundays(52);
-  let changed = false;
   for (const date of upcomingDates) {
     if (!sundays.find((s) => s.date === date)) {
-      sundays.push({ date, songs: [] });
-      changed = true;
+      await createOrUpdateSunday({ date, songs: [] });
     }
   }
-  if (changed) {
-    sundays.sort((a, b) => a.date.localeCompare(b.date));
-    for (const s of sundays) {
-      createOrUpdateSunday(s);
-    }
-    sundays = getAllSundays();
-  }
+  sundays = await getAllSundays();
 
   return Response.json(sundays);
 }
@@ -29,7 +21,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
 
   if (body.action === "addSong") {
-    const result = addSongToSunday(body.date, body.songId, body.keyOverride);
+    const result = await addSongToSunday(body.date, body.songId, body.keyOverride);
     if (!result) return Response.json({ error: "Sunday not found" }, { status: 404 });
     return Response.json(result);
   }

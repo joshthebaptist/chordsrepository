@@ -5,7 +5,7 @@ import { Song } from "@/lib/types";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q");
-  const songs = q ? searchSongs(q) : getAllSongs();
+  const songs = q ? await searchSongs(q) : await getAllSongs();
   return Response.json(songs);
 }
 
@@ -22,6 +22,6 @@ export async function POST(request: NextRequest) {
     createdAt: now,
     updatedAt: now,
   };
-  const created = createSong(song);
+  const created = await createSong(song);
   return Response.json(created, { status: 201 });
 }

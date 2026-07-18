@@ -5,7 +5,7 @@ import { SongList } from "./SongList";
 export const dynamic = "force-dynamic";
 
 export default async function SongsPage() {
-  const songs = getAllSongs();
+  const songs = await getAllSongs();
 
   return (
     <div className="space-y-6">

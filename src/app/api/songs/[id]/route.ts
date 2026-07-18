@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const song = getSong(id);
+  const song = await getSong(id);
   if (!song) return Response.json({ error: "Not found" }, { status: 404 });
   return Response.json(song);
 }
@@ -17,7 +17,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const updated = updateSong(id, body);
+  const updated = await updateSong(id, body);
   if (!updated) return Response.json({ error: "Not found" }, { status: 404 });
   return Response.json(updated);
 }
@@ -27,7 +27,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const ok = deleteSong(id);
+  const ok = await deleteSong(id);
   if (!ok) return Response.json({ error: "Not found" }, { status: 404 });
   return Response.json({ success: true });
 }

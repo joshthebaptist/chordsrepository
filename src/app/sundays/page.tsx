@@ -1,22 +1,21 @@
 import Link from "next/link";
-import { getAllSundays, getAllSongs } from "@/lib/store";
-import { formatDateDisplay, getSundayDate, generateUpcomingSundays } from "@/lib/dates";
-import { createOrUpdateSunday } from "@/lib/store";
+import { getAllSundays, getAllSongs, createOrUpdateSunday } from "@/lib/store";
+import { formatDateDisplay, generateUpcomingSundays } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
 export default async function SundaysPage() {
-  let sundays = getAllSundays();
-  const songs = getAllSongs();
+  let sundays = await getAllSundays();
+  const songs = await getAllSongs();
 
   // Ensure upcoming Sundays exist
   const upcomingDates = generateUpcomingSundays(52);
   for (const date of upcomingDates) {
     if (!sundays.find((s) => s.date === date)) {
-      createOrUpdateSunday({ date, songs: [] });
+      await createOrUpdateSunday({ date, songs: [] });
     }
   }
-  sundays = getAllSundays();
+  sundays = await getAllSundays();
 
   return (
     <div className="space-y-6">
@@ -32,8 +31,7 @@ export default async function SundaysPage() {
       <div className="grid gap-4">
         {sundays.map((sunday) => {
           const { day, month, year, full } = formatDateDisplay(sunday.date);
-          const songCount = sunday.songs.length;
-          const hasSongs = songCount > 0;
+          const hasSongs = sunday.songs.length > 0;
 
           return (
             <Link
